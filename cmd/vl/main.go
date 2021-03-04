@@ -21,53 +21,16 @@ var (
 )
 
 const (
-	OKColor      = "\033[1;34m%s\033[0m\n"
-	WarningColor = "\033[1;33m%s\033[0m\n"
-	ErrorColor   = "\033[1;31m%s\033[0m\n"
-	DebugColor   = "\033[0;36m%s\033[0m\n"
+	okColor      = "\033[1;34m%s\033[0m\n"
+	warningColor = "\033[1;33m%s\033[0m\n"
+	errorColor   = "\033[1;31m%s\033[0m\n"
+	debugColor   = "\033[0;36m%s\033[0m\n"
 )
 
-func worker(wg *sync.WaitGroup, url string, skipped []int, client *http.Client) {
-	defer wg.Done()
-
-	req, err := http.NewRequest("OPTIONS", url, nil)
-	if err != nil {
-		log.Fatalf("error on creating request: %v", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf(ErrorColor, "[ERROR] "+url)
-		return
-	}
-
-	shouldSkipURL := len(skipped) > 0 && isIn(resp.StatusCode, skipped)
-	isError := resp.StatusCode > 400
-	if !shouldSkipURL {
-		statusColor := OKColor
-		if isError {
-			statusColor = ErrorColor
-		}
-		fmt.Printf(statusColor, fmt.Sprintf("[%d] %s", resp.StatusCode, url))
-	}
-}
-
-func isIn(item int, items []int) bool {
-	for _, i := range items {
-		if i == item {
-			return true
-		}
-	}
-	return false
-}
-
-func isInStr(item string, items []string) bool {
-	for _, i := range items {
-		if i == item {
-			return true
-		}
-	}
-	return false
+type response struct {
+	URL      string
+	Response *http.Response
+	Err      error
 }
 
 func main() {
@@ -109,12 +72,86 @@ func main() {
 	}
 	wg := &sync.WaitGroup{}
 
-	for _, url := range matches {
+	results := make(chan *response)
+	requests := make(chan string)
+
+	// spawn workers
+	for i := 0; i <= 50; i++ {
 		wg.Add(1)
-		if isInStr(url, whitelisted) {
+		go worker(wg, requests, results, client)
+	}
+
+	go func() {
+		for _, url := range matches {
+			if isInStr(url, whitelisted) {
+				continue
+			}
+			requests <- url
+		}
+		close(requests)
+		wg.Wait()
+		close(results)
+	}()
+
+	for i := range results {
+		shouldSkipURL := len(skipped) > 0 && isIn(i.Response.StatusCode, skipped)
+		if i.Err != nil {
+			fmt.Printf(errorColor, fmt.Sprintf("[ERROR] %s", i.URL))
 			continue
 		}
-		go worker(wg, url, skipped, client)
+
+		statusColor := okColor
+		if i.Response.StatusCode > 400 {
+			statusColor = errorColor
+		}
+
+		if !shouldSkipURL {
+			fmt.Printf(statusColor, fmt.Sprintf("[%d] %s", i.Response.StatusCode, i.URL))
+		} else {
+			fmt.Printf(debugColor, fmt.Sprintf("[%d] %s", i.Response.StatusCode, i.URL))
+		}
 	}
-	wg.Wait()
+}
+
+func worker(wg *sync.WaitGroup, requests <-chan string, results chan<- *response, client *http.Client) {
+	wg.Done()
+	for url := range requests {
+		response := &response{
+			URL: url,
+		}
+		req, err := http.NewRequest("HEAD", url, nil)
+		if err != nil {
+			response.Err = err
+			results <- response
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			response.Err = err
+			results <- response
+			continue
+		}
+
+		response.Response = resp
+		results <- response
+	}
+}
+
+func isIn(item int, items []int) bool {
+	for _, i := range items {
+		if i == item {
+			return true
+		}
+	}
+	return false
+}
+
+func isInStr(item string, items []string) bool {
+	for _, i := range items {
+		if i == item {
+			return true
+		}
+	}
+	return false
 }
