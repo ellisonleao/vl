@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -14,17 +15,18 @@ import (
 )
 
 var (
-	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&\/\/=]*)`)
+	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=]*)`)
 	skipStatus = flag.String("a", "", "-a 500,400")
-	timeout    = flag.Duration("t", 5*time.Second, "-t 10")
+	timeout    = flag.Duration("t", 5*time.Second, "-t 10s or -t 1h")
 	whitelist  = flag.String("w", "", "-w server1.com,server2.com")
+	size       = flag.Int("s", 50, "-s 50")
 )
 
-const (
-	okColor      = "\033[1;34m%s\033[0m\n"
-	warningColor = "\033[1;33m%s\033[0m\n"
-	errorColor   = "\033[1;31m%s\033[0m\n"
-	debugColor   = "\033[0;36m%s\033[0m\n"
+var (
+	errorColor    = "\033[1;31m%d\033[0m"
+	errorStrColor = "\033[1;31m%s\033[0m"
+	okColor       = "\033[1;32m%d\033[0m"
+	debugColor    = "\033[1;36m%d\033[0m"
 )
 
 type response struct {
@@ -69,6 +71,9 @@ func main() {
 	matches := urlRE.FindAllString(string(file), -1)
 	client := &http.Client{
 		Timeout: *timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
 	wg := &sync.WaitGroup{}
 
@@ -76,11 +81,12 @@ func main() {
 	requests := make(chan string)
 
 	// spawn workers
-	for i := 0; i <= 50; i++ {
+	for i := 0; i <= 10; i++ {
 		wg.Add(1)
 		go worker(wg, requests, results, client)
 	}
 
+	// producer
 	go func() {
 		for _, url := range matches {
 			if isInStr(url, whitelisted) {
@@ -91,25 +97,24 @@ func main() {
 		close(requests)
 		wg.Wait()
 		close(results)
+		fmt.Printf("Found %d URIs\n", len(matches))
 	}()
 
 	for i := range results {
 		shouldSkipURL := len(skipped) > 0 && isIn(i.Response.StatusCode, skipped)
 		if i.Err != nil {
-			fmt.Printf(errorColor, fmt.Sprintf("[ERROR] %s", i.URL))
+			fmt.Printf("[%s] %s\n", fmt.Sprintf(errorStrColor, "ERROR"), i.URL)
 			continue
 		}
 
 		statusColor := okColor
 		if i.Response.StatusCode > 400 {
 			statusColor = errorColor
+		} else if shouldSkipURL {
+			statusColor = debugColor
 		}
 
-		if !shouldSkipURL {
-			fmt.Printf(statusColor, fmt.Sprintf("[%d] %s", i.Response.StatusCode, i.URL))
-		} else {
-			fmt.Printf(debugColor, fmt.Sprintf("[%d] %s", i.Response.StatusCode, i.URL))
-		}
+		fmt.Printf("[%s] %s \n", fmt.Sprintf(statusColor, i.Response.StatusCode), i.URL)
 	}
 }
 
