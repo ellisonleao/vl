@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,15 +76,15 @@ func main() {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 
 	results := make(chan *response)
 	requests := make(chan string)
 
 	// spawn workers
-	for i := 0; i <= 10; i++ {
+	for i := 0; i <= *size; i++ {
 		wg.Add(1)
-		go worker(wg, requests, results, client)
+		go worker(&wg, requests, results, client)
 	}
 
 	// producer
@@ -100,21 +101,28 @@ func main() {
 		fmt.Printf("Found %d URIs\n", len(matches))
 	}()
 
+	totalErrors := 0
 	for i := range results {
-		shouldSkipURL := len(skipped) > 0 && isIn(i.Response.StatusCode, skipped)
 		if i.Err != nil {
 			fmt.Printf("[%s] %s\n", fmt.Sprintf(errorStrColor, "ERROR"), i.URL)
+			totalErrors++
 			continue
 		}
 
+		shouldSkipURL := len(skipped) > 0 && isIn(i.Response.StatusCode, skipped)
 		statusColor := okColor
-		if i.Response.StatusCode > 400 {
+		if i.Response.StatusCode > 400 && !shouldSkipURL {
 			statusColor = errorColor
+			totalErrors++
 		} else if shouldSkipURL {
 			statusColor = debugColor
 		}
 
 		fmt.Printf("[%s] %s \n", fmt.Sprintf(statusColor, i.Response.StatusCode), i.URL)
+	}
+	if totalErrors > 0 {
+		fmt.Printf("Total Errors: %s \n", fmt.Sprintf(errorColor, totalErrors))
+		os.Exit(1)
 	}
 }
 
