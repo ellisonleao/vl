@@ -4,14 +4,12 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -45,7 +43,7 @@ func main() {
 	}
 
 	// read file
-	file, err := ioutil.ReadFile(args[0])
+	file, err := os.ReadFile(args[0])
 	if err != nil {
 		log.Fatalf("error on reading file: %v", err)
 	}
@@ -76,79 +74,69 @@ func main() {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
-	var wg sync.WaitGroup
 
 	results := make(chan *response)
-	requests := make(chan string)
-
-	// spawn workers
-	for i := 0; i <= *size; i++ {
-		wg.Add(1)
-		go worker(&wg, requests, results, client)
-	}
 
 	// producer
-	go func() {
-		for _, url := range matches {
-			if isInStr(url, whitelisted) {
-				continue
-			}
-			requests <- url
+	counter := 0
+	for _, url := range matches {
+		u := url
+		if isInStr(url, whitelisted) {
+			continue
 		}
-		close(requests)
-		wg.Wait()
-		close(results)
-		fmt.Printf("Found %d URIs\n", len(matches))
-	}()
+		counter++
+		go worker(u, results, client)
+	}
+	fmt.Printf("Found %d URIs\n", len(matches))
 
 	totalErrors := 0
-	for i := range results {
-		if i.Err != nil {
-			fmt.Printf("[%s] %s\n", fmt.Sprintf(errorStrColor, "ERROR"), i.URL)
+	for counter > 0 {
+		resp := <-results
+		counter--
+		if resp.Err != nil && resp.Response == nil {
+			fmt.Printf("[%s] %s\n", fmt.Sprintf(errorStrColor, "ERROR"), resp.Err.Error())
 			totalErrors++
 			continue
 		}
 
-		shouldSkipURL := len(skipped) > 0 && isIn(i.Response.StatusCode, skipped)
+		shouldSkipURL := len(skipped) > 0 && isIn(resp.Response.StatusCode, skipped)
 		statusColor := okColor
-		if i.Response.StatusCode > 400 && !shouldSkipURL {
+		if resp.Response.StatusCode > 400 && !shouldSkipURL {
 			statusColor = errorColor
 			totalErrors++
 		} else if shouldSkipURL {
 			statusColor = debugColor
 		}
 
-		fmt.Printf("[%s] %s \n", fmt.Sprintf(statusColor, i.Response.StatusCode), i.URL)
+		fmt.Printf("[%s] %s \n", fmt.Sprintf(statusColor, resp.Response.StatusCode), resp.URL)
 	}
+
 	if totalErrors > 0 {
 		fmt.Printf("Total Errors: %s \n", fmt.Sprintf(errorColor, totalErrors))
 		os.Exit(1)
 	}
 }
 
-func worker(wg *sync.WaitGroup, requests <-chan string, results chan<- *response, client *http.Client) {
-	wg.Done()
-	for url := range requests {
-		response := &response{
-			URL: url,
-		}
-		req, err := http.NewRequest("HEAD", url, nil)
-		if err != nil {
-			response.Err = err
-			results <- response
-			continue
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			response.Err = err
-			results <- response
-			continue
-		}
-
-		response.Response = resp
-		results <- response
+func worker(url string, results chan<- *response, client *http.Client) {
+	response := &response{
+		URL: url,
 	}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		response.Err = err
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		response.Err = err
+		results <- response
+		return
+	}
+	defer resp.Body.Close()
+
+	response.Response = resp
+	results <- response
 }
 
 func isIn(item int, items []int) bool {
