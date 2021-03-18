@@ -5,7 +5,7 @@ CLI tool that helps verify current status of URIs in text files
 # Installing
 
 ```
-go instal github.com/npxbr/verify-links/cmd/vl@latest
+go install github.com/npxbr/verify-links/cmd/vl@latest
 ```
 
 # Usage
