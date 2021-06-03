@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=]*)`)
+	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=$]*)`)
 	skipStatus = flag.String("a", "", "-a 500,400")
 	timeout    = flag.Duration("t", 10*time.Second, "-t 10s or -t 1h")
 	whitelist  = flag.String("w", "", "-w server1.com,server2.com")
