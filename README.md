@@ -2,6 +2,10 @@
 
 CLI tool that helps verify current status of URIs in text files
 
+# Prerequisites
+
+- Golang 1.16
+
 # Installing
 
 ```
