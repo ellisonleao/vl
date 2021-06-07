@@ -149,7 +149,7 @@ func isIn(item int, items []int) bool {
 
 func isInStr(item string, items []string) bool {
 	for _, i := range items {
-		if i == item {
+		if strings.Contains(item, i) {
 			return true
 		}
 	}
