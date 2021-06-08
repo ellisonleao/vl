@@ -2,6 +2,20 @@
 
 CLI tool that helps verify current status of URIs in text files
 
+# Table of Contents
+
+- [verify-links](#verify-links)
+- [Prerequisites](#prerequisites)
+- [Installing](#installing)
+- [Usage](#usage)
+  - [Common usage](#common-usage)
+  - [Flags](#flags)
+  - [Running with docker](#running-with-docker)
+- [Screenshots](#screenshots)
+  - [Terminal output](#terminal-output)
+  - [Github Action](#github-action)
+- [Running in a Github Action](#running-in-a-github-action)
+
 # Prerequisites
 
 - Golang 1.16
@@ -60,6 +74,12 @@ $ vl README.md -w server1.com,server2.com
 
 Adds a list of whitelisted links that shouldn't be verified. Links must be exactly
 passed as they are in the text file
+
+## Running with docker
+
+```
+$ docker run -it --rm -v $PWD:/ ellisonleao/vl /yourfile.md
+```
 
 # Screenshots
 
