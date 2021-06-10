@@ -4,7 +4,6 @@ CLI tool that helps verify current status of URIs in text files
 
 # Table of Contents
 
-- [verify-links](#verify-links)
 - [Prerequisites](#prerequisites)
 - [Installing](#installing)
 - [Usage](#usage)
