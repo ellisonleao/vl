@@ -22,7 +22,7 @@ CLI tool that helps verify current status of URIs in text files
 # Installing
 
 ```
-go install github.com/npxbr/verify-links/cmd/vl@latest
+go install github.com/ellisonleao/vl/cmd/vl@latest
 ```
 
 # Usage
