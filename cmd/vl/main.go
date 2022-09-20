@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -14,10 +15,16 @@ import (
 )
 
 var (
-	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=$]*)`)
-	skipStatus = flag.String("a", "", "-a 500,400")
-	timeout    = flag.Duration("t", 10*time.Second, "-t 10s or -t 1h")
-	whitelist  = flag.String("w", "", "-w server1.com,server2.com")
+	urlRE           = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=$]*)`)
+	skipStatus      = flag.String("a", "", "-a 500,400")
+	timeout         = flag.Duration("t", 10*time.Second, "-t 10s or -t 1h")
+	whitelist       = flag.String("w", "", "-w server1.com,server2.com")
+	s               = rand.NewSource(time.Now().Unix())
+	backoffSchedule = []time.Duration{
+		1 * time.Second,
+		3 * time.Second,
+		10 * time.Second,
+	}
 )
 
 var (
@@ -117,25 +124,45 @@ func main() {
 }
 
 func worker(url string, results chan<- *response, client *http.Client) {
+	var err error
+
 	response := &response{
 		URL: url,
 	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		response.Err = err
 		return
 	}
 
-	resp, err := client.Do(req)
+	userAgents := []string{
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:77.0) Gecko/20100101 Firefox/77.0",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
+	}
+
+	userAgent := userAgents[rand.Intn(len(userAgents))]
+
+	req.Header.Add("User-Agent", userAgent)
+
+	for _, backoff := range backoffSchedule {
+		resp, err := client.Do(req)
+		if err != nil {
+			time.Sleep(backoff)
+		} else {
+			response.Response = resp
+			results <- response
+			break
+		}
+	}
+
 	if err != nil {
 		response.Err = err
 		results <- response
-		return
 	}
-	defer resp.Body.Close()
-
-	response.Response = resp
-	results <- response
 }
 
 func isIn(item int, items []int) bool {
