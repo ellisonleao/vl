@@ -105,13 +105,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v2.1.3
+      - uses: actions/setup-go@v3
         id: go
         with:
-          go-version: '^1.16.1'
+          go-version: '>=1.17.0'
 
-      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v3
 
-      - run: go get github.com/npxbr/verify-links/cmd/vl
+      - run: go install github.com/ellisonleao/vl/cmd/vl@latest
       - run: vl README.md
 ```
