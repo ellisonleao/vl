@@ -77,7 +77,7 @@ passed as they are in the text file
 ## Running with docker
 
 ```
-$ docker run -it --rm -v $PWD:/ ellisonleao/vl /yourfile.md
+$ docker run -it --rm -v $PWD:/vl ellisonleao/vl /vl/yourfile.md
 ```
 
 # Screenshots
