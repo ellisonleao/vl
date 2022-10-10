@@ -87,7 +87,7 @@ func main() {
 	counter := 0
 	for _, url := range matches {
 		u := url
-		if isInStr(url, whitelisted) {
+		if isIn(url, whitelisted) {
 			continue
 		}
 		counter++
@@ -107,7 +107,7 @@ func main() {
 
 		shouldSkipURL := len(skipped) > 0 && isIn(resp.Response.StatusCode, skipped)
 		statusColor := okColor
-		if resp.Response.StatusCode > 400 && !shouldSkipURL {
+		if resp.Response.StatusCode > http.StatusBadRequest && !shouldSkipURL {
 			statusColor = errorColor
 			totalErrors++
 		} else if shouldSkipURL {
@@ -165,18 +165,9 @@ func worker(url string, results chan<- *response, client *http.Client) {
 	}
 }
 
-func isIn(item int, items []int) bool {
-	for _, i := range items {
-		if i == item {
-			return true
-		}
-	}
-	return false
-}
-
-func isInStr(item string, items []string) bool {
-	for _, i := range items {
-		if strings.Contains(item, i) {
+func isIn[item int | string](val item, values []item) bool {
+	for _, i := range values {
+		if i == val {
 			return true
 		}
 	}
