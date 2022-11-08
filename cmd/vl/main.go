@@ -23,7 +23,7 @@ var (
 	backoffSchedule = []time.Duration{
 		1 * time.Second,
 		3 * time.Second,
-		10 * time.Second,
+		5 * time.Second,
 	}
 )
 
@@ -87,7 +87,7 @@ func main() {
 	counter := 0
 	for _, url := range matches {
 		u := url
-		if isIn(url, whitelisted) {
+		if isIn(u, whitelisted) {
 			continue
 		}
 		counter++
@@ -123,19 +123,7 @@ func main() {
 	}
 }
 
-func worker(url string, results chan<- *response, client *http.Client) {
-	var err error
-
-	response := &response{
-		URL: url,
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		response.Err = err
-		return
-	}
-
+func newRequest(url string) (*http.Request, error) {
 	userAgents := []string{
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0",
@@ -144,25 +132,54 @@ func worker(url string, results chan<- *response, client *http.Client) {
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
 	}
 
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	userAgent := userAgents[rand.Intn(len(userAgents))]
 
 	req.Header.Add("User-Agent", userAgent)
 
-	for _, backoff := range backoffSchedule {
-		resp, err := client.Do(req)
-		if err != nil {
+	return req, err
+}
+
+func worker(url string, results chan<- *response, client *http.Client) {
+	var err error
+
+	response := &response{
+		URL: url,
+	}
+
+	req, err := newRequest(url)
+	if err != nil {
+		response.Err = err
+		return
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		for _, backoff := range backoffSchedule {
 			time.Sleep(backoff)
-		} else {
-			response.Response = resp
-			results <- response
-			break
+
+			// trying a new request with a different user-agent
+			req, err := newRequest(url)
+			if err != nil {
+				response.Err = err
+				break
+			}
+
+			resp, err := client.Do(req)
+			if err == nil {
+				response.Response = resp
+				break
+			}
 		}
 	}
 
-	if err != nil {
-		response.Err = err
-		results <- response
-	}
+	response.Response = resp
+	response.Err = err
+	results <- response
 }
 
 func isIn[item int | string](val item, values []item) bool {
