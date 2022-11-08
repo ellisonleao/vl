@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -75,15 +74,11 @@ func main() {
 	}
 
 	matches := urlRE.FindAllString(string(file), -1)
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = 10
-
-	r := retryablehttp.NewClient()
-	client := r.StandardClient()
-	client.Timeout = *timeout
-	client.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
+	client := retryablehttp.NewClient()
+	client.RetryMax = 10
+	client.RetryWaitMax = 10 * time.Second
+	client.HTTPClient.Timeout = *timeout
+	client.Logger = nil
 
 	results := make(chan *response)
 
@@ -142,7 +137,7 @@ func main() {
 	}
 }
 
-func newRequest(url string) (*http.Request, error) {
+func newRequest(url string) (*retryablehttp.Request, error) {
 	userAgents := []string{
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0",
@@ -151,7 +146,7 @@ func newRequest(url string) (*http.Request, error) {
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +158,7 @@ func newRequest(url string) (*http.Request, error) {
 	return req, err
 }
 
-func worker(url string, results chan<- *response, client *http.Client) {
+func worker(url string, results chan<- *response, client *retryablehttp.Client) {
 	var err error
 
 	response := &response{
