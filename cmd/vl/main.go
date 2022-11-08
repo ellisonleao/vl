@@ -12,25 +12,23 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 var (
-	urlRE           = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=$]*)`)
-	skipStatus      = flag.String("a", "", "-a 500,400")
-	timeout         = flag.Duration("t", 10*time.Second, "-t 10s or -t 1h")
-	whitelist       = flag.String("w", "", "-w server1.com,server2.com")
-	s               = rand.NewSource(time.Now().Unix())
-	backoffSchedule = []time.Duration{
-		1 * time.Second,
-		3 * time.Second,
-		5 * time.Second,
-	}
+	urlRE      = regexp.MustCompile(`https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9]{1,6}\b([-a-zA-Z0-9!@:%_\+.~#?&\/\/=$]*)`)
+	skipStatus = flag.String("a", "", "-a 500,400")
+	timeout    = flag.Duration("t", 10*time.Second, "-t 10s or -t 1h")
+	whitelist  = flag.String("w", "", "-w server1.com,server2.com")
+	s          = rand.NewSource(time.Now().Unix())
 )
 
 var (
 	errorColor    = "\033[1;31m%d\033[0m"
 	errorStrColor = "\033[1;31m%s\033[0m"
 	okColor       = "\033[1;32m%d\033[0m"
+	okStrColor    = "\033[1;32m%s\033[0m"
 	debugColor    = "\033[1;36m%d\033[0m"
 )
 
@@ -55,7 +53,10 @@ func main() {
 	}
 
 	// validate skipStatus
-	var skipped []int
+	var (
+		skipped     []int
+		skippedURIs []string
+	)
 	if len(*skipStatus) > 0 {
 		splitted := strings.Split(*skipStatus, ",")
 		for _, item := range splitted {
@@ -74,11 +75,14 @@ func main() {
 	}
 
 	matches := urlRE.FindAllString(string(file), -1)
-	client := &http.Client{
-		Timeout: *timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 10
+
+	r := retryablehttp.NewClient()
+	client := r.StandardClient()
+	client.Timeout = *timeout
+	client.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
 	results := make(chan *response)
@@ -112,9 +116,24 @@ func main() {
 			totalErrors++
 		} else if shouldSkipURL {
 			statusColor = debugColor
+			skippedURIs = append(skippedURIs, resp.URL)
 		}
 
 		fmt.Printf("[%s] %s \n", fmt.Sprintf(statusColor, resp.Response.StatusCode), resp.URL)
+	}
+
+	if len(whitelisted) > 0 {
+		fmt.Println("Whitelisted URIs:")
+		for _, wl := range whitelisted {
+			fmt.Printf("- %s \n", fmt.Sprintf(okStrColor, wl))
+		}
+	}
+
+	if len(skippedURIs) > 0 {
+		fmt.Printf("Skipped URIs with status %v: \n", skipped)
+		for _, sk := range skippedURIs {
+			fmt.Printf("- %s \n", fmt.Sprintf(okStrColor, sk))
+		}
 	}
 
 	if totalErrors > 0 {
@@ -158,25 +177,6 @@ func worker(url string, results chan<- *response, client *http.Client) {
 	}
 
 	resp, err := client.Do(req)
-	if err != nil {
-		for _, backoff := range backoffSchedule {
-			time.Sleep(backoff)
-
-			// trying a new request with a different user-agent
-			req, err := newRequest(url)
-			if err != nil {
-				response.Err = err
-				break
-			}
-
-			resp, err := client.Do(req)
-			if err == nil {
-				response.Response = resp
-				break
-			}
-		}
-	}
-
 	response.Response = resp
 	response.Err = err
 	results <- response
