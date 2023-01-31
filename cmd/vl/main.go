@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -73,12 +74,17 @@ func main() {
 		whitelisted = strings.Split(*whitelist, ",")
 	}
 
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
 	matches := urlRE.FindAllString(string(file), -1)
 	client := retryablehttp.NewClient()
 	client.RetryMax = 10
 	client.RetryWaitMax = 10 * time.Second
 	client.HTTPClient.Timeout = *timeout
 	client.Logger = nil
+	client.HTTPClient.Transport = tr
 
 	results := make(chan *response)
 
@@ -86,7 +92,7 @@ func main() {
 	counter := 0
 	for _, url := range matches {
 		u := url
-		if isIn(u, whitelisted) {
+		if matchWhitelisted(u, whitelisted) {
 			continue
 		}
 		counter++
@@ -177,9 +183,18 @@ func worker(url string, results chan<- *response, client *retryablehttp.Client) 
 	results <- response
 }
 
-func isIn[item int | string](val item, values []item) bool {
+func isIn(val int, values []int) bool {
 	for _, i := range values {
 		if i == val {
+			return true
+		}
+	}
+	return false
+}
+
+func matchWhitelisted(uri string, urls []string) bool {
+	for _, url := range urls {
+		if strings.Contains(uri, url) {
 			return true
 		}
 	}
